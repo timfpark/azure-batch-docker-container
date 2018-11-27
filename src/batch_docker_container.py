@@ -21,47 +21,27 @@ sys.path.append('.')
 sys.path.append('..')
 
 
-# global
-_BATCH_ACCOUNT_NAME = os.environ['BATCH_ACCOUNT_NAME']
-_BATCH_ACCOUNT_KEY = os.environ['BATCH_ACCOUNT_KEY']
-_BATCH_ACCOUNT_URL = os.environ['BATCH_ACCOUNT_URL']
-_STORAGE_ACCOUNT_NAME = os.environ['STORAGE_ACCOUNT_NAME']
-_STORAGE_ACCOUNT_KEY = os.environ['STORAGE_ACCOUNT_KEY']
-_POOL_ID = os.environ['POOL_ID']
-_DEDICATED_POOL_NODE_COUNT = int(os.environ['DEDICATED_POOL_NODE_COUNT'])
-_LOW_PRIORITY_POOL_NODE_COUNT = int(os.environ['LOW_PRIORITY_POOL_NODE_COUNT'])
-_POOL_VM_SIZE = os.environ['POOL_VM_SIZE']
-_JOB_ID = os.environ['JOB_ID']
+def check_env_var(key):
+    if not key in os.environ:
+        print(key + " env var not provided")
+        sys.exit(1)
 
 
-def query_yes_no(question, default="yes"):
-    """
-    Prompts the user for yes/no input, displaying the specified question text.
-
-    :param str question: The text of the prompt for input.
-    :param str default: The default if the user hits <ENTER>. Acceptable values
-    are 'yes', 'no', and None.
-    :rtype: str
-    :return: 'yes' or 'no'
-    """
-    valid = {'y': 'yes', 'n': 'no'}
-    if default is None:
-        prompt = ' [y/n] '
-    elif default == 'yes':
-        prompt = ' [Y/n] '
-    elif default == 'no':
-        prompt = ' [y/N] '
-    else:
-        raise ValueError("Invalid default answer: '{}'".format(default))
-
-    while 1:
-        choice = input(question + prompt).lower()
-        if default and not choice:
-            return default
-        try:
-            return valid[choice[0]]
-        except (KeyError, IndexError):
-            print("Please respond with 'yes' or 'no' (or 'y' or 'n').\n")
+# check env var inputs
+check_env_var("BATCH_ACCOUNT_NAME")
+check_env_var("BATCH_ACCOUNT_KEY")
+check_env_var("BATCH_ACCOUNT_URL")
+check_env_var("CONTAINER_IMAGE")
+check_env_var("DEDICATED_POOL_NODE_COUNT")
+check_env_var("JOB_ID")
+check_env_var("LOW_PRIORITY_POOL_NODE_COUNT")
+check_env_var("POOL_ID")
+check_env_var("POOL_VM_SIZE")
+check_env_var("STORAGE_ACCOUNT_NAME")
+check_env_var("STORAGE_ACCOUNT_KEY")
+check_env_var("INPUT_STORAGE_CONTAINER")
+check_env_var("OUTPUT_STORAGE_CONTAINER")
+check_env_var("MODEL_URL")
 
 
 def print_batch_exception(batch_exception):
@@ -144,7 +124,7 @@ def get_container_sas_token(block_blob_client,
 def get_container_sas_url(block_blob_client,
                           container_name, blob_permissions):
     """
-    Obtains a shared access signature URL that provides write access to the 
+    Obtains a shared access signature URL that provides write access to the
     ouput container to which the tasks will upload their output.
 
     :param block_blob_client: A blob service client.
@@ -160,7 +140,7 @@ def get_container_sas_url(block_blob_client,
 
     # Construct SAS URL for the container
     container_sas_url = "https://{}.blob.core.windows.net/{}?{}".format(
-        _STORAGE_ACCOUNT_NAME, container_name, sas_token)
+        os.environ['STORAGE_ACCOUNT_NAME'], container_name, sas_token)
 
     return container_sas_url
 
@@ -196,9 +176,9 @@ def create_pool(batch_service_client, pool_id):
                 version="latest"
             ),
             node_agent_sku_id="batch.node.ubuntu 16.04"),
-        vm_size=_POOL_VM_SIZE,
-        target_dedicated_nodes=_DEDICATED_POOL_NODE_COUNT,
-        target_low_priority_nodes=_LOW_PRIORITY_POOL_NODE_COUNT,
+        vm_size=os.environ['POOL_VM_SIZE'],
+        target_dedicated_nodes=os.environ['DEDICATED_POOL_NODE_COUNT'],
+        target_low_priority_nodes=os.environ['LOW_PRIORITY_POOL_NODE_COUNT'],
         start_task=batchmodels.StartTask(
             command_line="/bin/bash -c \"apt-get update && \
                 apt-get install -y apt-transport-https ca-certificates curl software-properties-common &&\
@@ -235,7 +215,7 @@ def create_job(batch_service_client, job_id, pool_id):
     batch_service_client.job.add(job)
 
 
-def add_tasks(batch_service_client, job_id, input_files, output_container_sas_url):
+def add_tasks(batch_service_client, job_id, input_blobs, output_container_sas_url):
     """
     Adds a task for each input file in the collection to the specified job.
 
@@ -248,29 +228,33 @@ def add_tasks(batch_service_client, job_id, input_files, output_container_sas_ur
     the specified Azure Blob storage container.
     """
 
-    print('Adding {} tasks to job [{}]...'.format(len(input_files), job_id))
+    print('Adding {} tasks to job [{}]...'.format(len(input_blobs), job_id))
 
     tasks = list()
 
-    for idx, input_file in enumerate(input_files):
-        input_file_path = input_file.file_path
-        output_file_path = "".join((input_file_path).split('.')[:-1]) + '.mp3'
-        command = "/bin/bash -c \"docker run -rm timfpark/delay:latest \"".format(
-            input_file_path, output_file_path)
+    for idx, input_blob in enumerate(input_blobs):
+        command = "/bin/bash -c \"docker run -rm {}  -e INPUT_BLOB='{}' -e OUTPUT_STORAGE_CONTAINER='{}' -e MODEL_URL='{}'\"".format(
+            os.environ['CONTAINER_IMAGE'], input_blob.name, os.environ['OUTPUT_STORAGE_CONTAINER'], os.environ['MODEL_URL'])
         tasks.append(batch.models.TaskAddParameter(
             id='Task{}'.format(idx),
             command_line=command,
-            resource_files=[input_file],
-            output_files=[batchmodels.OutputFile(
-                file_pattern=output_file_path,
-                destination=batchmodels.OutputFileDestination(
-                          container=batchmodels.OutputFileBlobContainerDestination(
-                              container_url=output_container_sas_url)),
-                upload_options=batchmodels.OutputFileUploadOptions(
-                    upload_condition=batchmodels.OutputFileUploadCondition.task_success))]
-        )
-        )
+        ))
     batch_service_client.task.add_collection(job_id, tasks)
+
+
+def get_all_input_blobs(blob_client, storage_container):
+    blobs = []
+    marker = None
+    while True:
+        batch = blob_client.list_blobs(storage_container, marker=marker)
+        blobs.extend(batch)
+        if not batch.next_marker:
+            break
+        marker = batch.next_marker
+    for blob in blobs:
+        print('processing: ' + blob.name)
+
+    return blobs
 
 
 def wait_for_tasks_to_complete(batch_service_client, job_id, timeout):
@@ -310,39 +294,27 @@ def wait_for_tasks_to_complete(batch_service_client, job_id, timeout):
 if __name__ == '__main__':
 
     start_time = datetime.datetime.now().replace(microsecond=0)
-    print('Sample start: {}'.format(start_time))
+    print('Start time: {}'.format(start_time))
     print()
 
     # Create the blob client, for use in obtaining references to
     # blob storage containers and uploading files to containers.
 
     blob_client = azureblob.BlockBlobService(
-        account_name=_STORAGE_ACCOUNT_NAME,
-        account_key=_STORAGE_ACCOUNT_KEY)
+        account_name=os.environ['STORAGE_ACCOUNT_NAME'],
+        account_key=os.environ['STORAGE_ACCOUNT_KEY'])
 
     # Use the blob client to create the containers in Azure Storage if they
     # don't yet exist.
 
-    input_container_name = 'input'
-    output_container_name = 'output'
-    blob_client.create_container(input_container_name, fail_on_exist=False)
+    input_blobs = get_all_input_blobs(
+        blob_client, os.environ['INPUT_STORAGE_CONTAINER'])
+
+    output_container_name = os.environ['OUTPUT_STORAGE_CONTAINER']
+
     blob_client.create_container(output_container_name, fail_on_exist=False)
-    print('Container [{}] created.'.format(input_container_name))
+
     print('Container [{}] created.'.format(output_container_name))
-
-    # Create a list of all MP4 files in the InputFiles directory.
-    input_file_paths = []
-
-    for folder, subs, files in os.walk(os.path.join(sys.path[0], 'InputFiles')):
-        for filename in files:
-            if filename.endswith(".mp4"):
-                input_file_paths.append(os.path.abspath(
-                    os.path.join(folder, filename)))
-
-    # Upload the input files. This is the collection of files that are to be processed by the tasks.
-    input_files = [
-        upload_file_to_container(blob_client, input_container_name, file_path)
-        for file_path in input_file_paths]
 
     # Obtain a shared access signature URL that provides write access to the output
     # container to which the tasks will upload their output.
@@ -354,28 +326,29 @@ if __name__ == '__main__':
 
     # Create a Batch service client. We'll now be interacting with the Batch
     # service in addition to Storage
-    credentials = batchauth.SharedKeyCredentials(_BATCH_ACCOUNT_NAME,
-                                                 _BATCH_ACCOUNT_KEY)
+    credentials = batchauth.SharedKeyCredentials(os.environ['BATCH_ACCOUNT_NAME'],
+                                                 os.environ['BATCH_ACCOUNT_KEY'])
 
     batch_client = batch.BatchServiceClient(
         credentials,
-        base_url=_BATCH_ACCOUNT_URL)
+        base_url=os.environ['BATCH_ACCOUNT_URL'])
 
     try:
         # Create the pool that will contain the compute nodes that will execute the
         # tasks.
-        create_pool(batch_client, _POOL_ID)
+        create_pool(batch_client, os.environ['POOL_ID'])
 
         # Create the job that will run the tasks.
-        create_job(batch_client, _JOB_ID, _POOL_ID)
+        create_job(batch_client, os.environ['JOB_ID'], os.environ['POOL_ID'])
 
         # Add the tasks to the job. Pass the input files and a SAS URL
         # to the storage container for output files.
-        add_tasks(batch_client, _JOB_ID, input_files, output_container_sas_url)
+        add_tasks(batch_client, os.environ['JOB_ID'],
+                  input_blobs, output_container_sas_url)
 
         # Pause execution until tasks reach Completed state.
         wait_for_tasks_to_complete(batch_client,
-                                   _JOB_ID,
+                                   os.environ['JOB_ID'],
                                    datetime.timedelta(minutes=30))
 
         print("  Success! All tasks reached the 'Completed' state within the "
@@ -385,17 +358,14 @@ if __name__ == '__main__':
         print_batch_exception(err)
         raise
 
-    # Delete input container in storage
-    print('Deleting container [{}]...'.format(input_container_name))
-    blob_client.delete_container(input_container_name)
-
-    # Print out some timing info
+    # Print out timing info
     end_time = datetime.datetime.now().replace(microsecond=0)
+
     print()
-    print('Sample end: {}'.format(end_time))
+    print('End time: {}'.format(end_time))
     print('Elapsed time: {}'.format(end_time - start_time))
     print()
 
     # Clean up Batch resources
-    batch_client.job.delete(_JOB_ID)
-    batch_client.pool.delete(_POOL_ID)
+    batch_client.job.delete(os.environ['JOB_ID'])
+    batch_client.pool.delete(os.environ['POOL_ID'])
