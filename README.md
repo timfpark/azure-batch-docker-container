@@ -2,7 +2,7 @@
 
 This project is an adaption of the Azure Batch sample to run a sample containerized workload with Azure Batch. It runs a specified docker container for each input file in InputFiles and handles pool creation and deletion around this.
 
-It requires as input the following environmental variables:
+It takes as input the following environmental variables:
 
 ```
 BATCH_ACCOUNT_NAME (name of your Azure batch account)
@@ -23,7 +23,15 @@ OUTPUT_STORAGE_CONTAINER (what storage container to put output in - passed to th
 MODEL_URL (url of the model to use - passed to the container as env var of the same name)
 ```
 
-Note, by default there is a limit of 100 cores for both dedicated and low priority cores per Azure Batch account. You can raise a support request to raise this for larger workloads.
+After setting all of these environmental variables as input (we recommend a shell script), you can start an Azure Batch job using:
+
+```
+$ python src/batch_docker_container.py
+```
+
+This will create the job, create a pool with the number and composition of cores specified above, and execute the job. At the conclusion of the job, it will tear down the pool and job and delete both.
+
+Note: By default there is a limit of 100 cores for both dedicated and low priority cores per Azure Batch account. You can raise a support request to raise this for larger workloads.
 
 For more details and explanation, see the accompanying article [Run a parallel workload with Azure Batch using the Python API](https://docs.microsoft.com/azure/batch/tutorial-parallel-python).
 
