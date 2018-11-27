@@ -13,6 +13,7 @@ DEDICATED_POOL_NODE_COUNT (number of dedicated pool nodes to use. 0 recommended 
 LOW_PRIORITY_POOL_NODE_COUNT (number of low priority VMs to use. large number for lowest cost, a small number for lowest latency)
 POOL_VM_SIZE (VM SKU type. 'Standard_A1_v2' recommended for general purpose, 'Standard_F2s_v2' for compute heavy workloads, 'Standard_E2_v3' for memory heavy workloads)
 JOB_ID (job id for run)
+MAXIMUM_JOB_TIME_MINUTES (maximum time job is allowed to run - to prevent run away jobs)
 
 CONTAINER_IMAGE (image to run as batch process)
 
@@ -21,6 +22,8 @@ STORAGE_ACCOUNT_KEY = (storage account key for input and output)
 INPUT_STORAGE_CONTAINER (what storage container to use as input.  all files in this container will be enumerated for input file tasks)
 OUTPUT_STORAGE_CONTAINER (what storage container to put output in - passed to the container as env var of the same name)
 MODEL_URL (url of the model to use - passed to the container as env var of the same name)
+
+INSTANCE_COST (optional: if provided, in currency per hour for your selected POOL_VM_SIZE, the script will emit the estimated cost of the batch job.)
 ```
 
 After setting all of these environmental variables as input (we recommend a shell script), you can start an Azure Batch job using:

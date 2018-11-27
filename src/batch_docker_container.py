@@ -42,6 +42,7 @@ check_env_var("STORAGE_ACCOUNT_KEY")
 check_env_var("INPUT_STORAGE_CONTAINER")
 check_env_var("OUTPUT_STORAGE_CONTAINER")
 check_env_var("MODEL_URL")
+check_env_var("MAXIMUM_JOB_TIME")
 
 
 def print_batch_exception(batch_exception):
@@ -349,7 +350,7 @@ if __name__ == '__main__':
         # Pause execution until tasks reach Completed state.
         wait_for_tasks_to_complete(batch_client,
                                    os.environ['JOB_ID'],
-                                   datetime.timedelta(minutes=30))
+                                   datetime.timedelta(minutes=os.environ['MAXIMUM_JOB_TIME_MINUTES']))
 
         print("  Success! All tasks reached the 'Completed' state within the "
               "specified timeout period.")
@@ -361,10 +362,17 @@ if __name__ == '__main__':
     # Print out timing info
     end_time = datetime.datetime.now().replace(microsecond=0)
 
+    elapsed_time = end_time - start_time
+
     print()
     print('End time: {}'.format(end_time))
-    print('Elapsed time: {}'.format(end_time - start_time))
-    print()
+    print('Elapsed time: {}'.format(elapsed_time))
+
+    if "INSTANCE_COST" in os.environ:
+        cost = (elapsed_time.total_seconds() / 3600.0) * \
+            (int(os.environ['DEDICATED_POOL_NODE_COUNT']) +
+             int(os.environ['LOW_PRIORITY_POOL_NODE_COUNT'])) * float(os.environ['INSTANCE_COST'])
+        print('Cost estimate: ${}'.format(cost))
 
     # Clean up Batch resources
     batch_client.job.delete(os.environ['JOB_ID'])
